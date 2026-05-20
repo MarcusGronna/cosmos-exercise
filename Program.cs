@@ -1,4 +1,8 @@
-﻿string databaseName = "myDatabase"; // Name of the database to create or use
+﻿using Microsoft.Azure.Cosmos;
+using dotenv.net;
+using System.Runtime.InteropServices;
+
+string databaseName = "myDatabase"; // Name of the database to create or use
 string containerName = "myContainer"; // Name of the container to create or use
 
 // Load environment variables from .env file
@@ -6,3 +10,61 @@ DotEnv.Load();
 var envVars = DotEnv.Read();
 string cosmosDbAccountUrl = envVars["DOCUMENT_ENDPOINT"];
 string accountKey = envVars["ACCOUNT_KEY"];
+
+if (string.IsNullOrEmpty(cosmosDbAccountUrl) || string.IsNullOrEmpty(accountKey))
+{
+    Console.WriteLine("Please set the DOCUMENT_ENDPOINT and ACCOUNT_KEY environment variables.");
+    return;
+}
+
+// CREATE THE COSMOS DB CLIENT USING THE ACCOUNT URL AND KEY
+CosmosClient client = new(
+    accountEndpoint: cosmosDbAccountUrl,
+    authKeyOrResourceToken: accountKey
+);
+
+try
+{
+    // CREATE A DATABASE IF IT DOESN'T ALREADY EXIST
+    Database database = await client.CreateDatabaseIfNotExistsAsync(databaseName);
+    Console.WriteLine($"Created or retrieved database: {database.Id}");
+
+    // CREATE A CONTAINER WITH A SPECIFIED PARTITION KEY
+    Container container = await database.CreateContainerIfNotExistsAsync(
+        id: containerName,
+        partitionKeyPath: "/id"
+    );
+    Console.WriteLine($"Created of retrieved container: {container.Id}");
+
+
+    // DEFINE A TYPED ITEM (PRODUCT) TO ADD TO THE CONTAINER
+    Product product = new Product
+    {
+        id = Guid.NewGuid().ToString(),
+        name = "banana",
+        description = "yellow and curved"
+    };
+
+    // ADD THE ITEM TO THE CONTAINER
+    ItemResponse<Product> createResponse = await container.CreateItemAsync(
+        item: product,
+        partitionKey: new PartitionKey(product.id)
+    );
+
+    Console.WriteLine($"Created item with ID: {createResponse.Resource.id}");
+    Console.WriteLine($"Request charge: {createResponse.RequestCharge} RUs");
+}
+catch (CosmosException ex)
+{
+    // Handle general exceptions
+    // Log the error message for debugging
+    Console.WriteLine($"Error: {ex.Message}");
+}
+
+// This class represents a product in the Cosmos DB container
+public class Product
+{
+    public string? id { get; set; }
+    public string? name { get; set; }
+    public string? description { get; set; }
+}
